@@ -86,12 +86,44 @@ int cmp(const void *a, const void *b) {
 	return ((struct process *)a)->ready_t - ((struct process *)b)->ready_t;
 }
 
-
+int t;
 int FIFO_running_index = -1;
+
 int RR_turn = -1;
 int last_time = 0;
 int quantum_start = -1;
-int t;
+
+
+struct node {
+   int process;
+   struct node * next;
+};
+
+struct node *last = NULL;
+struct node *current = NULL;
+void in_queue(int P){
+	if (current == NULL){
+		current = (struct node*) malloc(sizeof(struct node));
+		current->process = P;
+		current->next = current;
+		last = current;
+	}else{
+		struct node * newnode  = (struct node*) malloc(sizeof(struct node));
+		newnode -> process = P;
+		newnode -> next = current;
+		last->next = newnode;  
+	}
+}	
+void queue_pop(){
+	if ( current == last){
+		current =NULL;
+		last = NULL;
+	}else{
+		last->next = current->next;
+		current = current->next;
+	}
+}	
+
 
 int next_CPU_user(int type,int running ,int N_process){
 	switch(type){
@@ -110,24 +142,11 @@ int next_CPU_user(int type,int running ,int N_process){
 		case(1):{//RR
 			if (running == -1 || t - last_time > time_quantum){
 				int i;
-				for(i = (RR_turn + 1) % N_process ; i != RR_turn ;i = (i + 1) % N_process){
-					if(P[i].exec_t != -1 && P[i].ready_t <= t){
-						RR_turn = i;
-						last_time = t;
-						return i;
-					}		
-					// no process need CPU
-					if(RR_turn == -1 && i == N_process - 1){
-						return -1;
-					}
-				}
-				// same process exec again
-				if(P[i].exec_t != -1 && P[i].ready_t <= t){
-					last_time = t;
-					return i;
-				}
-				//idle
-				return -1;
+				if(current == NULL)
+					return -1;
+				last_time = t;
+				current = current->next;
+				return current->process;
 			}else
 				return running;
 			break;
@@ -206,6 +225,9 @@ int main(){
 #ifdef DEBUG
 				printf("%s terminated\n",P[running].name);	
 #endif
+				if(schedule_type == 1){//RR
+					queue_pop();
+				}
 				end_time[running] = syscall(333); //time_now()
 				//print_process()
 				syscall(334,P[running].pid,start_time[running],end_time[running]);
@@ -226,7 +248,10 @@ int main(){
 #ifdef DEBUG 
 			printf("%s created \n", P[next_ready].name);
 #endif
-			create_process(next_ready);		
+			create_process(next_ready);	
+			if(schedule_type == 1){//RR
+				in_queue(next_ready);
+			}	
 			start_time[next_ready] = syscall(333); //time_now()
 	      	next_ready++;
 		}
